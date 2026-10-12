@@ -20,7 +20,7 @@ public sealed record DeviceResult(int DeviceId, string Name, PollOutcome Outcome
     };
 }
 
-// The timing settings. Tests change them to tiny values so they run fast.
+// 3 trys max
 public class PollerOptions
 {
     //3 attempts, before giving up
@@ -30,7 +30,7 @@ public class PollerOptions
     public int MaxAttempts => 3;
 }
 
-// Polls devices. It knows nothing about SQL or the console, so tests can use a fake client.
+// Polls devices
 public class DevicePoller
 {
     private readonly IDeviceClient _client;
@@ -62,7 +62,7 @@ public class DevicePoller
     // Polls one device: up to 3 attempts, each limited to 2 seconds.
     public async Task<DeviceResult> PollAsync(DeviceInfo device, CancellationToken cancellationToken)
     {
-        var stopwatch = Stopwatch.StartNew();
+        var stopwatch = Stopwatch.StartNew(); // for the Elapsed ms 
 
         for (int attempt = 1; attempt <= _options.MaxAttempts; attempt++)
         {
@@ -75,20 +75,15 @@ public class DevicePoller
 
             try
             {
-                // WaitAsync also stops waiting after the timeout, even if the client ignores
-                // its token. It throws TimeoutException when that happens.
-                DeviceReading reading = await _client
-                    .ReadAsync(device, attemptCts.Token)
-                    .WaitAsync(_options.AttemptTimeout, cancellationToken);
+                DeviceReading reading = await _client.ReadAsync(device, attemptCts.Token).WaitAsync(_options.AttemptTimeout, cancellationToken);
 
-                // A reading that is not a real number is bad. Do not retry.
+                // reading must return a number because it returns are int and double
                 if (double.IsNaN(reading.Value) || double.IsInfinity(reading.Value))
                 {
-                    return MakeResult(device, PollOutcome.BadReading, attempt, stopwatch,
-                        "reading is not a usable number (" + reading.Value + ")");
+                    return MakeResult(device, PollOutcome.BadReading, attempt, stopwatch,"reading is not a number");
                 }
 
-                // Got a good reading. OK if first try, RETRIED-OK if we had to retry.
+                // Reading no issues
                 PollOutcome outcome = attempt == 1 ? PollOutcome.Ok : PollOutcome.RetriedOk;
                 string value = reading.Value.ToString(CultureInfo.InvariantCulture);
                 return MakeResult(device, outcome, attempt, stopwatch, value);
@@ -97,40 +92,43 @@ public class DevicePoller
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    // The user pressed Ctrl+C. This is not a device fault, so pass it on.
-                    throw;
+                    throw; // when ctrl c is pressed
                 }
-                // Otherwise our own 2 second limit fired. Fall through and retry.
             }
             catch (TimeoutException)
             {
-                // The device said it timed out. Fall through and retry.
+                // first two timeout fall through
             }
             catch (Exception ex)
             {
-                // Any other error is a hard failure. Do not retry.
+                // other errros will stop and exit
                 return MakeResult(device, PollOutcome.Error, attempt, stopwatch, ex.Message);
             }
 
             // We only get here after a timeout. Tell the abandoned call to stop.
             attemptCts.Cancel();
 
-            // Wait a little before trying again (but not after the last attempt).
+            // attempt 1 & 2
             if (attempt < _options.MaxAttempts)
             {
-                await Task.Delay(_options.RetryDelays[attempt - 1], cancellationToken);
+                if (attempt == 1)
+                {
+                    attemptCts.CancelAfter(_options.SecondAttemptTimeout);
+                }
+                else if (attempt == 2)
+                {
+                    attemptCts.CancelAfter(_options.ThirdAttemptTimeout);
+                }
             }
         }
 
-        // Every attempt timed out.
-        return MakeResult(device, PollOutcome.Timeout, _options.MaxAttempts, stopwatch,
-            "no answer after " + _options.MaxAttempts + " attempts");
+        // mex attempt reached
+        return MakeResult(device, PollOutcome.Timeout, _options.MaxAttempts, stopwatch, "max attempts reached :'(");
     }
 
-    private static DeviceResult MakeResult(
-        DeviceInfo device, PollOutcome outcome, int attempts, Stopwatch stopwatch, string detail)
+// store each device results
+    private static DeviceResult MakeResult(DeviceInfo device, PollOutcome outcome, int attempts, Stopwatch stopwatch, string detail)
     {
-        return new DeviceResult(
-            device.DeviceId, device.Name, outcome, attempts, stopwatch.ElapsedMilliseconds, detail);
+        return new DeviceResult(device.DeviceId, device.Name, outcome, attempts, stopwatch.ElapsedMilliseconds, detail);
     }
 }
