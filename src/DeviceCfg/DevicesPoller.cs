@@ -69,8 +69,7 @@ public class DevicePoller
             // If the user already pressed Ctrl+C, stop now.
             cancellationToken.ThrowIfCancellationRequested();
 
-            // A token just for this attempt. It is cancelled by Ctrl+C, or after the timeout.
-            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); // new token for each attempt
             attemptCts.CancelAfter(_options.AttemptTimeout);
 
             try
