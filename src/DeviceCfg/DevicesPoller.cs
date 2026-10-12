@@ -24,7 +24,7 @@ public sealed record DeviceResult(int DeviceId, string Name, PollOutcome Outcome
 public class PollerOptions
 {
     //3 attempts, before giving up
-    public TimeSpan AttemptTimeout { get; set; } = TimeSpan.FromMilliseconds(200);
+    public TimeSpan AttemptTimeout { get; set; } = TimeSpan.FromSeconds(2);
     public TimeSpan SecondAttemptTimeout { get; set; } = TimeSpan.FromMilliseconds(200);
     public TimeSpan ThirdAttemptTimeout { get; set; } = TimeSpan.FromMilliseconds(400);
     public int MaxAttempts => 3;
