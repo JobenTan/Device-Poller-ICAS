@@ -11,9 +11,9 @@ public class DevicePollerTests
     // Tiny timings so the tests run in milliseconds instead of seconds.
     private static readonly PollerOptions FastOptions = new()
     {
-        AttemptTimeout = TimeSpan.FromMilliseconds(50),
-        SecondAttemptTimeout = TimeSpan.FromMilliseconds(1),
-        ThirdAttemptTimeout = TimeSpan.FromMilliseconds(1)
+        AttemptTimeout = TimeSpan.FromSeconds(1),
+        SecondAttemptTimeout = TimeSpan.FromMilliseconds(50),
+        ThirdAttemptTimeout = TimeSpan.FromMilliseconds(50)
     };
 
     // A device to poll. The id is the only thing that matters in the tests.
@@ -35,8 +35,7 @@ public class DevicePollerTests
     public async Task AnswersFirstTime_IsOk_WithOneAttempt()
     {
         // Arrange: a device that answers straight away with 21.5.
-        var client = new FakeDeviceClient((device, call, token) =>
-            Task.FromResult(FakeDeviceClient.Reading(device, 21.5)));
+        var client = new FakeDeviceClient((device, call, token) => Task.FromResult(FakeDeviceClient.Reading(device, 21.5)));
 
         // Act
         var result = await PollerFor(client).PollAsync(Device(), CancellationToken.None);
@@ -51,34 +50,57 @@ public class DevicePollerTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task TimesOutTwiceThenAnswers_IsRetriedOk_WithThreeAttempts()
+public async Task TimesOutTwiceThenAnswers_IsRetriedOk_WithThreeAttempts()
+{
+    // Arrange: the first two calls time out, the third one answers.
+    var client = new FakeDeviceClient((device, call, token) =>
     {
-        // Hint: the lambda gets `call` = 1, 2, 3... for each attempt.
-        //       throw new TimeoutException("slow") while call <= 2, then return a reading.
-        // Expect: PollOutcome.RetriedOk and Attempts == 3.
-        await Task.CompletedTask;
-        Assert.True(false, "TODO: write this test");
-    }
+        if (call <= 2)
+        {
+            throw new TimeoutException("device timedout");
+        }
+        return Task.FromResult(FakeDeviceClient.Reading(device, 18.8));
+    });
+
+    // Act
+    var result = await PollerFor(client).PollAsync(Device(), CancellationToken.None);
+
+    // Assert
+    Assert.Equal(PollOutcome.RetriedOk, result.Outcome);
+    Assert.Equal(3, result.Attempts);
+}
 
     [Fact]
     public async Task AlwaysTimesOut_IsTimeout_AfterThreeAttempts()
     {
-        // Hint: the device throws TimeoutException every time.
-        // Expect: PollOutcome.Timeout, Attempts == 3, and client.CallsFor(1) == 3.
-        await Task.CompletedTask;
-        Assert.True(false, "TODO: write this test");
+    var client = new FakeDeviceClient((device, call, token) =>
+    {
+        if (call <= 3)
+        {
+            throw new TimeoutException("device timedout");
+        }
+        return Task.FromResult(FakeDeviceClient.Reading(device, 20.8));
+    });
+
+        var result = await PollerFor(client).PollAsync(Device(), CancellationToken.None);
+        Assert.Equal(PollOutcome.Timeout, result.Outcome);
+        Assert.Equal(3, result.Attempts);
     }
 
     [Fact]
-    public async Task NeverAnswersButHonoursTheToken_IsTimeout_AfterThreeAttempts()
+    public async Task NeverAnswersButHonoursTheToken_IsTimeout_AfterThreeAttempts() //infinite delay
     {
-        // Hint: like simulated device 8. Inside the lambda:
-        //       await Task.Delay(Timeout.Infinite, token);   // only the token can end this
-        //       then return anything (it is never reached).
-        // Expect: PollOutcome.Timeout and Attempts == 3.
-        await Task.CompletedTask;
-        Assert.True(false, "TODO: write this test");
+        var client = new FakeDeviceClient(async (device, call, token) =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            return FakeDeviceClient.Reading(device, 99.9);
+        });
+        var result  = await PollerFor(client).PollAsync(Device(), CancellationToken.None);
+
+        Assert.Equal(PollOutcome.Timeout, result.Outcome);
+        Assert.Equal(3, result.Attempts);
     }
+
 
     [Fact]
     public async Task NeverAnswersAndIgnoresTheToken_IsStillTimeout()
