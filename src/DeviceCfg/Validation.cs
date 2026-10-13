@@ -6,8 +6,8 @@ namespace IcasExercise;
 {
     public static (Status Status, List<string> Reasons) Validate (EachDeviceRecord row)
     {
-        if (row.DeviceId == 0)
-            return (Status.Skipped, new List<string> { "DeviceId is 0" });
+        if (row.Enabled == 0)
+            return (Status.Skipped, new List<string> { "Device is disabled" });
 
         var reasons = new List<string>();
         if (string.IsNullOrWhiteSpace(row.IpAddress))
