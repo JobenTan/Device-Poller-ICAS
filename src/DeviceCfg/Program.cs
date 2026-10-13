@@ -50,9 +50,8 @@ public class Program
             return ExitConfigError;
         }
 
-        //filter only polling devices
-        var results = new List<DeviceResult>();       // every device ends up here
-        var devicesToPoll = new List<DeviceInfo>();   // only the valid ones
+        var results = new List<DeviceResult>();
+        var devicesToPoll = new List<DeviceInfo>();
 
         foreach (EachDeviceRecord row in rows)
         {
